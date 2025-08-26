@@ -1,8 +1,10 @@
 import json
+from time import time
 from datetime import datetime
+from tabulate import tabulate
 
-from func import get_section
-from providers.open_router import get_model_details
+from func import get_section, output
+from providers.open_router import get_model_details, openrouter
 
 
 model = """
@@ -12,6 +14,8 @@ mistralai/codestral-2508
 test_name = """
 get_metadata
 """.strip()
+
+execute_only = []  # Выполнить тесты только с этими номерами
 
 # --- ПАРАМЕТРЫ ГЕНЕРАЦИИ (стандартные) ---
 param = {
@@ -26,11 +30,12 @@ param = {
 }
 
 # --- СТРУКТУРИРОВАННЫЙ ВЫВОД ---
-response_format = {
-    "response_format": None,  # {"type": "json_object"} Только если модель поддерживает JSON mode
-    "logprobs": None,          # Возвращать лог-вероятности токенов
-    "top_logprobs": None,          # Сколько топ-токенов возвращать (если logprobs=True)
-}
+response_format = None
+# {
+#     "response_format": None,  # {"type": "json_object"} Только если модель поддерживает JSON mode
+#     "logprobs": None,          # Возвращать лог-вероятности токенов
+#     "top_logprobs": None,          # Сколько топ-токенов возвращать (если logprobs=True)
+# }
 
 # --- ДОПОЛНИТЕЛЬНЫЕ ПОЛЯ (extra_body) ---
 extra_body = None
@@ -47,7 +52,7 @@ extra_body = None
 }
 """
 
-date_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+date_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
 # --- ПАРАМЕТРЫ МОДЕЛИ ---
 # Определяем существование модели и ее параметры
@@ -57,8 +62,8 @@ if model_details is None:
     exit(1)
 
 # Цены на ввод/вывод модели за 1M токенов
-price_input = float(model_details.get("pricing", {}).get("prompt", 0)) * 1000000
-price_output = float(model_details.get("pricing", {}).get("completion", 0)) * 1000000
+price_input = float(model_details.get("pricing", {}).get("prompt", 0))
+price_output = float(model_details.get("pricing", {}).get("completion", 0))
 
 # --- РАЗБОР ТЕСТА ---
 # Читаем тест из файла из папки tests
@@ -77,26 +82,107 @@ if not question_answer:
     exit(1)
 
 i = 1  # Счетчик тестовых заданий
+total_time_start = time()  # Общее время выполнения
+total_tokens_input = 0  # Общее количество токенов
+total_tokens_output = 0  # Общее количество токенов
+total_price = 0  # Общая стоимость
 while True:
-    question = get_section(question_answer, f"Вопрос {i}").strip()
-    answer = get_section(question_answer, f"Ответ {i}").strip()
+    question = get_section(question_answer, f"Вопрос {i}", 2)
+    answer = get_section(question_answer, f"Ответ {i}", 2)
     if not question:
         break
+
+    i += 1
+    if execute_only and i - 1 not in execute_only:
+        # Выполнить только выбранные тесты
+        continue
+
+    question = question.strip()
+
     # Выясняем, должен ли быть ответ json
     try:
+        answer = answer.strip()
         dict_answer = json.loads(answer)
     except:
         dict_answer = None
 
+    rows = [
+        ["Дата", date_time],
+        ["Модель", model],
+        ["Ввод", f"{price_input * 1000000:.2f}$ за 1М"],
+        ["Вывод", f"{price_output * 1000000:.2f}$ за 1М"],
+        ["Тест", test_name],
+        ["Описание", description],
+    ]
+
     # Запрос к модели
+    start_time = time()
+    result = openrouter(
+        model=model,
+        role=role,
+        prompt=prompt + "\nВопрос:\n" + question,
+        param=param,
+        response_format=response_format,
+        extra_body=extra_body,
+    )
 
+    # Формат вывода: выровненные колонки
+    table_str = tabulate(rows, tablefmt="outline")  # tablefmt="plain"
+    output(table_str, model)  # Вывод текста
 
-print(date_time)
-print(model)
-print(f"Ввод {price_input:.2f}$ за 1М, Вывод {price_output:.2f}$ за 1М")
-print(test_name)
-print(description)
-print(question_answer)
+    # Подсчет результатов запроса
+    response_time = time() - start_time
+    tokens_input = result.get("prompt_tokens", 0)  # Вход
+    tokens_output = result.get("completion_tokens", 0)  # Выход
+    total_tokens_input += tokens_input  # Вход всего
+    total_tokens_output += tokens_output  # Выход всего
+    price = tokens_input * price_input + tokens_output * price_output  # Цена запроса
+    total_price += price  # Цена всего
+
+    # Вопрос-ответ
+    text = f"ВОПРОС: {question}\n\n"
+    if dict_answer is not None:
+        # Если ответ должен быть в виде json
+        try:
+            dict_result = json.loads(result.get("answer", "{}"))
+            if dict_result == dict_answer:
+                text += "--- РАВНЫ ---"
+            else:
+                text += "--- НЕ РАВНЫ ---"
+            text += "\nОТВЕТ (модели):\n---------------\n" + json.dumps(dict_result, ensure_ascii=False, indent=4)
+        except:
+            text += "--- ОШИБКА ---"
+            text += "ОТВЕТ (модели):\n---------------\n" + result.get("answer", "{}")
+        text += "\n\nОТВЕТ (контрольный):\n--------------------\n" + json.dumps(dict_answer, ensure_ascii=False, indent=4)
+    else:
+        # Если ответ не json
+        text += "ОТВЕТ (модели):\n---------------\n" + result.get("answer", "")
+        text += "\n\nОТВЕТ (контрольный):\n--------------------\n" + answer
+
+    output(text, model)  # Вывод текста
+    rows = [
+        ["Токенов Ввод", tokens_input],
+        ["Токенов Вывод", tokens_output],
+        ["Цена запроса", f"{price:.10f}".rstrip('0').rstrip('.')],
+        ["Время выполнения", f"{response_time:.2f}"],
+    ]
+
+    # Формат вывода: выровненные колонки
+    table_str = tabulate(rows, tablefmt="outline", disable_numparse=True)  # tablefmt="plain"
+    output(table_str, model)  # Вывод текста
+
+text = "\nИТОГ:\n"
+rows = [
+    ["Токенов Ввод", total_tokens_input],
+    ["Токенов Вывод", total_tokens_output],
+    ["Цена запроса", f"{total_price:.10f}".rstrip('0').rstrip('.')],
+    ["Время выполнения", f"{time()-total_time_start:.2f}"],
+]
+
+# Формат вывода: выровненные колонки
+table_str = tabulate(rows, tablefmt="outline", disable_numparse=True)  # tablefmt="plain"
+output(text + table_str, model)  # Вывод текста
+
 
 
 

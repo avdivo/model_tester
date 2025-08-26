@@ -4,11 +4,12 @@ import requests
 from openai import OpenAI
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
+from time import time
 
 # Загрузка переменных окружения
 load_dotenv()
 
-API_KEY = os.getenv("OPENROUTER_API_KEY"),  # Получи на: https://openrouter.ai/keys
+API_KEY = os.getenv("OPENROUTER_API_KEY")  # Получи на: https://openrouter.ai/keys
 
 
 def get_model_details(model_name: str) -> Optional[Dict]:
@@ -44,47 +45,53 @@ def get_model_details(model_name: str) -> Optional[Dict]:
         print(f"Ошибка API: {e}")
         return None
 
-def openrouter(model: str = "", ):
+
+def openrouter(model: str = "",
+               role: str = "",
+               prompt: str = "",
+               param: dict = None,
+               response_format = None,  # response_format
+               extra_body = None,  # extra_body
+               ):
+
+    # Удаление не заданных параметров
+    param = {key: value for key, value in param.items() if value}
+
     # --- 1. Настройка клиента ---
-    # Не забудь установить переменную окружения или впиши ключ (не в git!)
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",  # Важно: правильный URL (без пробела в конце!)
         api_key=API_KEY,  # Получи на: https://openrouter.ai/keys
     )
 
-
-    completion = client.chat.completions.create(
-        # --- ОБЯЗАТЕЛЬНЫЕ ---
-        model="mistralai/mistral-7b-instruct",  # Любая модель из https://openrouter.ai/models
-        messages=[
-            {"role": "system", "content": "Ты помощник."},
-            {"role": "user", "content": "Привет!"}
+    arg = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": role},
+            {"role": "user", "content": prompt}
         ],
 
         # --- ПАРАМЕТРЫ ГЕНЕРАЦИИ (стандартные) ---
-        temperature=0.7,           # Контроль случайности: 0 = детерминированно, 1 = креативно
-        max_tokens=512,            # Макс. токенов в ответе
-        top_p=1.0,                 # Nucleus sampling — альтернатива temperature
-        frequency_penalty=0.0,     # Штраф за повторение слов (-2.0 до 2.0)
-        presence_penalty=0.0,      # Штраф за новые темы (-2.0 до 2.0)
-        seed=None,                 # Фиксировать результат (если поддерживается)
-        stop=None,                 # Строка или список строк, при которых остановить генерацию
-        stream=False,              # Потоковая передача (True/False)
+        **param,
+    }
 
-        # --- СТРУКТУРИРОВАННЫЙ ВЫВОД ---
-        response_format={"type": "json_object"},  # Только если модель поддерживает JSON mode
-        # logprobs=False,          # Возвращать лог-вероятности токенов
-        # top_logprobs=3,          # Сколько топ-токенов возвращать (если logprobs=True)
+    # --- СТРУКТУРИРОВАННЫЙ ВЫВОД ---
+    if response_format:
+        response_format = {key: value for key, value in response_format.items() if value}
+        arg["response_format"] = response_format
 
-        # --- ДОПОЛНИТЕЛЬНЫЕ ПОЛЯ (extra_body) ---
-        extra_body={
-            "provider": {
-                "id": "baseten",                         # Принудительно использовать провайдера
-                # "id": "openai",                       # Или: openai, anthropic, google и др.
-                "allow_fallbacks": False,                # Запретить fallback на другие провайдеры
-                # "order": ["baseten", "fireworks"]     # Приоритет провайдеров
-            },
-            # "transforms": ["llama-3-tokenizer"],       # Для моделей, требующих особых токенизаторов
-            # "route": "fallback",                      # Стратегия маршрутизации
+
+    # --- ДОПОЛНИТЕЛЬНЫЕ ПОЛЯ (extra_body) ---
+    if extra_body:
+        extra_body = {key: value for key, value in extra_body.items() if value}
+        arg["extra_body"] = extra_body
+
+    completion = client.chat.completions.create(**arg)
+    result = {
+        # Ответ модели
+        "answer": completion.choices[0].message.content,
+
+        # Токены
+        "prompt_tokens": completion.usage.prompt_tokens,  # Вход
+        "completion_tokens": completion.usage.completion_tokens,  # Выход
         }
-    )
+    return result

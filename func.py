@@ -1,5 +1,6 @@
-
+from tabulate import tabulate
 from typing import List, Optional
+
 
 def get_section(markdown_text: str, heading: str, level: int = 1) -> Optional[str]:
     """
@@ -40,3 +41,18 @@ def get_section(markdown_text: str, heading: str, level: int = 1) -> Optional[st
             collected.append(line)
 
     return "\n".join(collected) if collected else None
+
+def output(text: str, model: str):
+    """
+    Выводит текст в консоль и сохраняет в файл
+    :param text: Текст для вывода
+    :param model: Название модели, для получения имени файла
+    :return:
+    """
+    # Печать в консоль
+    print(text)
+
+    # Запись в файл
+    with open(f"result/{model.replace("/", "_")}.txt", "a", encoding="utf-8") as f:
+        f.write(text + "\n")
+
