@@ -1,0 +1,79 @@
+"""
+Асинхронный запрос к OpenRouter через aiohttp (без библиотеки openai).
+Поддерживает те же параметры: model, role, prompt, param, response_format, extra_body.
+"""
+import os
+import aiohttp
+from dotenv import load_dotenv
+from typing import Dict, Optional
+
+# Загрузка переменных окружения
+load_dotenv()
+
+API_KEY = os.getenv("OPENROUTER_API_KEY")  # Получи на: https://openrouter.ai/keys
+
+
+async def openrouter_async(
+    model: str = "",
+    role: str = "",
+    prompt: str = "",
+    param: Optional[Dict] = None,
+    response_format: Optional[Dict] = None,
+    extra_body: Optional[Dict] = None,
+) -> Dict[str, int]:
+    """
+    Асинхронный запрос к OpenRouter через aiohttp.
+
+    :param model: Название модели (обязательно)
+    :param role: Системный промпт
+    :param prompt: Текст от пользователя
+    :param param: Доп. параметры (temperature, max_tokens и т.п.)
+    :param response_format: Для JSON-ответов, например {"type": "json_object"}
+    :param extra_body: Доп. поля, например {"provider": {"id": "baseten"}}
+    :return: {"answer": "...", "prompt_tokens": "...", "completion_tokens": "..."}
+    """
+    # Базовые параметры
+    param = param or {}
+    args = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": role},
+            {"role": "user", "content": prompt}
+        ],
+        **{k: v for k, v in param.items() if v is not None}
+    }
+
+    # Добавляем опциональные поля
+    if response_format:
+        args["response_format"] = {k: v for k, v in response_format.items() if v}
+    if extra_body:
+        args["extra_body"] = {k: v for k, v in extra_body.items() if v}
+
+    # Заголовки
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",  # ← Замени на свой
+        "Content-Type": "application/json",
+        # Опционально: для рейтинга на openrouter.ai
+        "HTTP-Referer": "http://localhost:8000",
+        "X-Title": "Мой Бот",
+    }
+
+    # Отправляем запрос
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            json=args,
+            headers=headers
+        ) as response:
+            data = await response.json()
+
+    # Извлекаем ответ
+    answer = data["choices"][0]["message"]["content"]
+    prompt_tokens = data["usage"]["prompt_tokens"]
+    completion_tokens = data["usage"]["completion_tokens"]
+
+    return {
+        "answer": answer,
+        "prompt_tokens": int(prompt_tokens),
+        "completion_tokens": int(completion_tokens),
+    }

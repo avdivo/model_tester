@@ -1,18 +1,24 @@
 import json
-from time import time
+import asyncio
+from time import time, sleep
 from datetime import datetime
 from tabulate import tabulate
+from statistics import median
 
 from func import get_section, output
+from report.check import compare, compare_text
+from report.calc_ball import calculate_model_score
+from report.to_excel import append_record_to_excel
+from providers.open_router_async import openrouter_async
 from providers.open_router import get_model_details, openrouter
 
-
 model = """
-mistralai/codestral-2508
+moonshotai/kimi-k2
 """.strip()
 
+
 test_name = """
-get_metadata
+get_metadata_1
 """.strip()
 
 execute_only = []  # Выполнить тесты только с этими номерами
@@ -32,7 +38,7 @@ param = {
 # --- СТРУКТУРИРОВАННЫЙ ВЫВОД ---
 response_format = None
 # {
-#     "response_format": None,  # {"type": "json_object"} Только если модель поддерживает JSON mode
+#     "response_format": {"type": "json_object"},  # Только если модель поддерживает JSON mode
 #     "logprobs": None,          # Возвращать лог-вероятности токенов
 #     "top_logprobs": None,          # Сколько топ-токенов возвращать (если logprobs=True)
 # }
@@ -81,7 +87,21 @@ if not question_answer:
     print("Тест не содержит вопросов и ответов.")
     exit(1)
 
-i = 1  # Счетчик тестовых заданий
+rows = [
+    ["Дата", date_time],
+    ["Модель", model],
+    ["Ввод", f"{price_input * 1000000:.2f}$ за 1М"],
+    ["Вывод", f"{price_output * 1000000:.2f}$ за 1М"],
+    ["Тест", test_name],
+    ["Описание", description],
+]
+table_str = tabulate(rows, tablefmt="outline")  # tablefmt="plain"
+output(table_str, model)  # Вывод в файл
+
+i = 1  # Порядковый номер вопроса
+exe_sum = 0  # Обрабатываемый вопрос (сколько обработано реально)
+right_sum = 0  # Правильных ответов
+times_list = []  # Список времени выполнения запросов
 total_time_start = time()  # Общее время выполнения
 total_tokens_input = 0  # Общее количество токенов
 total_tokens_output = 0  # Общее количество токенов
@@ -92,9 +112,9 @@ while True:
     if not question:
         break
 
-    i += 1
-    if execute_only and i - 1 not in execute_only:
+    if execute_only and i not in execute_only:
         # Выполнить только выбранные тесты
+        i += 1
         continue
 
     question = question.strip()
@@ -106,32 +126,20 @@ while True:
     except:
         dict_answer = None
 
-    rows = [
-        ["Дата", date_time],
-        ["Модель", model],
-        ["Ввод", f"{price_input * 1000000:.2f}$ за 1М"],
-        ["Вывод", f"{price_output * 1000000:.2f}$ за 1М"],
-        ["Тест", test_name],
-        ["Описание", description],
-    ]
-
     # Запрос к модели
     start_time = time()
-    result = openrouter(
+    result = asyncio.run(openrouter_async(
         model=model,
         role=role,
         prompt=prompt + "\nВопрос:\n" + question,
         param=param,
         response_format=response_format,
         extra_body=extra_body,
-    )
-
-    # Формат вывода: выровненные колонки
-    table_str = tabulate(rows, tablefmt="outline")  # tablefmt="plain"
-    output(table_str, model)  # Вывод текста
+    ))
 
     # Подсчет результатов запроса
     response_time = time() - start_time
+    times_list.append(response_time)
     tokens_input = result.get("prompt_tokens", 0)  # Вход
     tokens_output = result.get("completion_tokens", 0)  # Выход
     total_tokens_input += tokens_input  # Вход всего
@@ -140,49 +148,74 @@ while True:
     total_price += price  # Цена всего
 
     # Вопрос-ответ
-    text = f"ВОПРОС: {question}\n\n"
+    print(f"Вопрос {i}", end=" - ")
+    text = f"Вопрос {i}:\n{question}\n"
     if dict_answer is not None:
-        # Если ответ должен быть в виде json
+        # Если ответ должен быть json
         try:
             dict_result = json.loads(result.get("answer", "{}"))
-            if dict_result == dict_answer:
-                text += "--- РАВНЫ ---"
-            else:
-                text += "--- НЕ РАВНЫ ---"
-            text += "\nОТВЕТ (модели):\n---------------\n" + json.dumps(dict_result, ensure_ascii=False, indent=4)
+            check = compare(dict_result, dict_answer)  # Сверка ответа с эталонным
+            text += "Ответ модели:\n" + json.dumps(dict_result, ensure_ascii=False, indent=4)
         except:
-            text += "--- ОШИБКА ---"
-            text += "ОТВЕТ (модели):\n---------------\n" + result.get("answer", "{}")
-        text += "\n\nОТВЕТ (контрольный):\n--------------------\n" + json.dumps(dict_answer, ensure_ascii=False, indent=4)
+            check = False
+            text += "Ответ модели:\n" + result.get("answer", "{}")
     else:
-        # Если ответ не json
-        text += "ОТВЕТ (модели):\n---------------\n" + result.get("answer", "")
-        text += "\n\nОТВЕТ (контрольный):\n--------------------\n" + answer
+        # Если ответ не json проверяем правильность ответа через модель
+        check = compare_text(question, answer, result.get("answer", ""))
+        text += "Ответ модели:\n" + result.get("answer", "{}")
+    text += "\nПравильный ответ:\n" + answer
 
-    output(text, model)  # Вывод текста
+    right = ("ВЕРНО" if check else "ОШИБКА")
+
+    output(text, model)  # Вывод текста в файл
+    print(right, f" (Время: {response_time:.2f})")
+
     rows = [
+        ["Проверка", right],
         ["Токенов Ввод", tokens_input],
         ["Токенов Вывод", tokens_output],
         ["Цена запроса", f"{price:.10f}".rstrip('0').rstrip('.')],
         ["Время выполнения", f"{response_time:.2f}"],
     ]
 
-    # Формат вывода: выровненные колонки
     table_str = tabulate(rows, tablefmt="outline", disable_numparse=True)  # tablefmt="plain"
     output(table_str, model)  # Вывод текста
 
+    i += 1  # Следующий вопрос
+    exe_sum += 1  # Увеличиваем счетчик реально обработанных вопросов
+    if check:
+        right_sum += 1  # Увеличиваем счетчик правильных ответов
+
+# Подведение итогов теста
+# Баллы за тест
+median_latency = median(times_list) if times_list else 0  # Медианная задержка
+score = calculate_model_score(exe_sum, right_sum, median_latency)
+
 text = "\nИТОГ:\n"
 rows = [
+    ["Всего вопросов", exe_sum],
+    ["Правильных ответов", right_sum],
+    ["Баллов за тест", score],
     ["Токенов Ввод", total_tokens_input],
     ["Токенов Вывод", total_tokens_output],
-    ["Цена запроса", f"{total_price:.10f}".rstrip('0').rstrip('.')],
+    ["Цена", f"{total_price:.10f}".rstrip('0').rstrip('.')],
     ["Время выполнения", f"{time()-total_time_start:.2f}"],
 ]
 
 # Формат вывода: выровненные колонки
 table_str = tabulate(rows, tablefmt="outline", disable_numparse=True)  # tablefmt="plain"
-output(text + table_str, model)  # Вывод текста
+sep = "\n" + "/\\" * 40
+output(text + table_str + sep, model)  # Вывод текста
 
+print("\nБаллов за тест -", score)
+print("Цена -", f"{total_price:.10f}".rstrip('0').rstrip('.'))
 
-
-
+# Запись результата теста в Excel
+append_record_to_excel(
+    model=model,
+    test=test_name,
+    median_latency=median_latency,
+    percent_correct=int(right_sum / exe_sum * 100),
+    score=score,
+    price=total_price
+)

@@ -2,9 +2,8 @@
 import os
 import requests
 from openai import OpenAI
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-from time import time
 
 # Загрузка переменных окружения
 load_dotenv()
