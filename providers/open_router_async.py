@@ -59,21 +59,27 @@ async def openrouter_async(
     }
 
     # Отправляем запрос
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            json=args,
-            headers=headers
-        ) as response:
-            data = await response.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=args,
+                headers=headers
+            ) as response:
+                data = await response.json()
+                if response.status != 200:
+                    error_message = data.get("error", {}).get("message", str(data))
+                    return {"error": error_message}
 
-    # Извлекаем ответ
-    answer = data["choices"][0]["message"]["content"]
-    prompt_tokens = data["usage"]["prompt_tokens"]
-    completion_tokens = data["usage"]["completion_tokens"]
+        # Извлекаем ответ
+        answer = data["choices"][0]["message"]["content"]
+        prompt_tokens = data["usage"]["prompt_tokens"]
+        completion_tokens = data["usage"]["completion_tokens"]
 
-    return {
-        "answer": answer,
-        "prompt_tokens": int(prompt_tokens),
-        "completion_tokens": int(completion_tokens),
-    }
+        return {
+            "answer": answer,
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+        }
+    except Exception as e:
+        return {"error": str(e)}

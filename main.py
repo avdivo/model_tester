@@ -137,6 +137,20 @@ while True:
         extra_body=extra_body,
     ))
 
+    # --- ОБРАБОТКА ОШИБКИ API ---
+    if "error" in result:
+        error_message = result["error"]
+        print(f"Вопрос {i} - ОШИБКА API: {error_message}")
+        error_text = f"Вопрос {i}:\n{question}\n\nОШИБКА API: {error_message}"
+        output(error_text, model)
+
+        # Увеличиваем счетчики и переходим к следующему вопросу
+        i += 1
+        exe_sum += 1
+        # right_sum не увеличиваем, так как ответ неверный
+        continue
+    # --- КОНЕЦ ОБРАБОТКИ ОШИБКИ ---
+
     # Подсчет результатов запроса
     response_time = time() - start_time
     times_list.append(response_time)
@@ -153,16 +167,16 @@ while True:
     if dict_answer is not None:
         # Если ответ должен быть json
         try:
-            dict_result = json.loads(result.get("answer", "{}"))
+            dict_result = json.loads(result.get("answer", "{{}}"))
             check = compare(dict_result, dict_answer)  # Сверка ответа с эталонным
             text += "Ответ модели:\n" + json.dumps(dict_result, ensure_ascii=False, indent=4)
         except:
             check = False
-            text += "Ответ модели:\n" + result.get("answer", "{}")
+            text += "Ответ модели:\n" + result.get("answer", "{{}}")
     else:
         # Если ответ не json проверяем правильность ответа через модель
         check = compare_text(question, answer, result.get("answer", ""))
-        text += "Ответ модели:\n" + result.get("answer", "{}")
+        text += "Ответ модели:\n" + result.get("answer", "{{}}")
     text += "\nПравильный ответ:\n" + answer
 
     right = ("ВЕРНО" if check else "ОШИБКА")

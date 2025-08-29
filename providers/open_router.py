@@ -84,13 +84,16 @@ def openrouter(model: str = "",
         extra_body = {key: value for key, value in extra_body.items() if value}
         arg["extra_body"] = extra_body
 
-    completion = client.chat.completions.create(**arg)
-    result = {
-        # Ответ модели
-        "answer": completion.choices[0].message.content,
+    try:
+        completion = client.chat.completions.create(**arg)
+        result = {
+            # Ответ модели
+            "answer": completion.choices[0].message.content,
 
-        # Токены
-        "prompt_tokens": completion.usage.prompt_tokens,  # Вход
-        "completion_tokens": completion.usage.completion_tokens,  # Выход
+            # Токены
+            "prompt_tokens": completion.usage.prompt_tokens,  # Вход
+            "completion_tokens": completion.usage.completion_tokens,  # Выход
         }
-    return result
+        return result
+    except Exception as e:
+        return {"error": str(e)}
