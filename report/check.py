@@ -1,188 +1,101 @@
 import requests
 from typing import Dict, Any, List, Union
 from fuzzywuzzy import fuzz
+from comparison_settings import ComparisonSettings
 
-NUM_TOL = 0.01  # Максимально допустимое отличие для чисел
-STR_SIM = 75  # Минимальная похожесть строк в % (0-100) (без сравнения смысла)
+# --- НОВЫЕ ФУНКЦИИ СРАВНЕНИЯ С УЧЕТОМ НАСТРОЕК ---
 
-def compare_dicts(
-    control: Dict[str, Any],
-    test: Dict[str, Any],
-    num_tol: float = NUM_TOL,
-    str_sim: int = STR_SIM
-) -> bool:
+def compare_text(question: str, answer: str, answer_model: str, settings: ComparisonSettings) -> bool:
     """
-    Сравнивает контрольный и тестируемый словари по значениям с допусками:
-    - Числа: с заданной погрешностью (по умолчанию 0.01)
-    - Строки: без учёта регистра и с размытым сравнением (fuzzy)
-    - Вложенные словари: рекурсивно
-
-    Лишние ключи в тестируемом словаре игнорируются.
-    Отсутствие ключа или несоответствие значения — ошибка.
-
-    Использует: fuzzywuzzy + python-Levenshtein (для скорости и поддержки кириллицы).
-
-    :param control: Контрольный словарь (эталон).
-    :param test: Тестируемый словарь.
-    :param num_tol: Максимально допустимое отличие для чисел (по умолчанию 0.01).
-    :param str_sim: Минимальная похожесть строк в % (0-100, по умолчанию 85).
-    :return: True — если все обязательные поля совпадают, иначе False.
+    Сравнивает текстовые ответы с помощью LLM.
+    (ВНИМАНИЕ: Текущая реализация - заглушка, требует доработки для реального использования,
+    так как использует неопределенные переменные aggregator и api_key)
     """
-    for key, expected_value in control.items():
-        # Ключ должен существовать
-        if key not in test:
-            return False
+    # TODO: Доработать эту функцию для реальных запросов к LLM для проверки
+    # Пока что она просто использует fuzzywuzzy как запасной вариант
+    similarity = fuzz.ratio(answer.lower(), answer_model.lower())
+    return similarity >= 75 # Используем некий порог по умолчанию
 
-        actual_value = test[key]
-
-        # Если оба значения — словари, сравниваем рекурсивно
-        if isinstance(expected_value, dict) and isinstance(actual_value, dict):
-            if not compare_dicts(expected_value, actual_value, num_tol, str_sim):
-                return False
-            continue
-
-        # Проверка типов: типы должны совпадать
-        if type(expected_value) != type(actual_value):
-            return False
-
-        # Сравнение чисел с погрешностью
-        if isinstance(expected_value, (int, float)):
-            if abs(expected_value - actual_value) > num_tol:
-                return False
-
-        # Сравнение строк с учётом похожести (fuzzy) и без учёта регистра
-        elif isinstance(expected_value, str):
-            similarity = fuzz.ratio(expected_value.lower(), actual_value.lower())
-            if similarity < str_sim:
-                return False
-
-        # Для остальных типов (bool, None, и т.п.) — строгое равенство
-        else:
-            if expected_value != actual_value:
-                return False
-
-    # Все проверки пройдены
-    return True
-
-
-def compare_text(
-    question : str = "",
-    answer: str = "",
-    answer_model: str = ""
-) -> str:
+def compare_strings(control_str: str, test_str: str, threshold: int) -> bool:
     """
-    Запрос в выбранный агрегатор (OpenRouter или Comet API).
-    Модель должна определить правильность ответа модели на вопрос
-    имея эталонный ответ.
-    Для строкового эталонного ответа проверяется близость ответа модели.
-    Для json ответа полная схожесть или похожесть не числовых
-
-    :param question: вопрос, от
-    :param api_key: API-ключ для выбранного агрегатора
-    :param prompt: Вопрос к модели, на который нужно получить только 'Yes' или 'No'
-    :return: Строка с ответом ('Yes' или 'No'), очищенная от пробелов и перевода строк
+    Сравнивает две строки на основе процента совпадения (fuzzywuzzy).
     """
+    return fuzz.ratio(control_str.lower(), test_str.lower()) >= threshold
 
-    # Конфигурация для каждого агрегатора: URL, заголовки и модель
-    CONFIG = {
-        "openrouter": {
-            "url": "https://openrouter.ai/api/v1/chat/completions",
-            "headers": lambda key: {
-                "Authorization": f"Bearer {key}",
-                "HTTP-Referer": "http://localhost",
-                "X-Title": "yes-no-test"
-            },
-            "model": "openai/gpt-4o-mini"  # пример; можно заменить на другую
-        },
-        "comet": {
-            "url": "https://api.cometapi.com/v1/chat/completions",
-            "headers": lambda key: {
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json"
-            },
-            "model": "gpt-4o-mini"  # пример модели Comet
-        }
-    }
-
-    if aggregator not in CONFIG:
-        raise ValueError(f"Неизвестный агрегатор: {aggregator}")
-
-    cfg = CONFIG[aggregator]
-
-    # Формируем данные запроса
-    data = {
-        "model": cfg["model"],
-        "messages": [
-            {"role": "user", "content": f"Answer ONLY 'Yes' or 'No'. {prompt}"}
-        ],
-        "max_tokens": 3  # ограничение на длину ответа
-    }
-
-    # Выполняем HTTP POST запрос
-    response = requests.post(
-        cfg["url"],
-        headers=cfg["headers"](api_key),
-        json=data,
-        timeout=15
-    )
-    response.raise_for_status()  # выбросить исключение при HTTP-ошибке
-
-    # Извлекаем и возвращаем результат
-    result = response.json()
-    return result["choices"][0]["message"]["content"].strip()
-
-
-def compare(control: Union[Dict, List, str, int, float, Any],
-           test: Union[Dict, List, str, int, float, Any]) -> bool:
+def compare_values(control: Any, test: Any, settings: ComparisonSettings, context: str) -> bool:
     """
-    Универсальная функция сравнения. Принимает любые два объекта и возвращает True, если они
-    считаются равными по правилам, зависящим от типа.
-
-    :param control: Контрольное значение (эталон).
-    :param test: Тестируемое значение.
-    :return: True — если значения (или структуры) эквивалентны, иначе False.
+    Универсальная функция сравнения двух значений с учетом контекста и настроек.
     """
-    # Типы не совпадают — сразу False
     if type(control) != type(test):
         return False
 
-    # --- Словари ---
     if isinstance(control, dict):
-        return compare_dicts(control, test)
-
-    # --- Строки ---
-    if isinstance(control, str):
-        return compare_text(control, test)
-
-    # --- Числа (int, float) ---
-    if isinstance(control, (int, float)):
-        return abs(control - test) <= NUM_TOL
-
-    # --- Списки ---
+        return compare_dicts(control, test, settings)
+    
     if isinstance(control, list):
-        # Длина должна совпадать
-        if len(control) != len(test):
-            return False
+        return compare_lists(control, test, settings)
 
-        # Работаем с копиями, чтобы удалять совпавшие элементы
-        remaining_control = control.copy()
-        remaining_test = test.copy()
+    if isinstance(control, (int, float)):
+        return abs(control - test) <= settings.num_tolerance
 
-        # Для каждого элемента в контрольном списке ищем совпадение
-        for item_ctrl in control:
-            matched = False
-            for item_test in remaining_test:
-                if compare(item_ctrl, item_test):  # Рекурсивно используем compare
-                    # Удаляем совпавшие
-                    remaining_control.remove(item_ctrl)
-                    remaining_test.remove(item_test)
-                    matched = True
-                    break
-            if not matched:
-                return False
+    if isinstance(control, str):
+        if context == 'dict':
+            if settings.dict_str_comparison_method == 'similarity':
+                return compare_strings(control, test, settings.dict_str_similarity_threshold)
+            else: # model
+                # Заглушка для сравнения через модель
+                return compare_text("", control, test, settings)
+        elif context == 'list':
+            if settings.list_str_comparison_method == 'similarity':
+                return compare_strings(control, test, settings.list_str_similarity_threshold)
+            else: # model
+                return compare_text("", control, test, settings)
+        else: # text
+            if settings.text_comparison_method == 'similarity':
+                return compare_strings(control, test, 75) # Порог по умолчанию для текста
+            else: # model
+                return compare_text("", control, test, settings)
 
-        # Все элементы должны быть сопоставлены
-        return len(remaining_control) == 0
-
-    # --- Все остальные типы (bool, None, и т.п.) ---
+    # Для всех остальных типов (bool, None)
     return control == test
+
+def compare_dicts(control: Dict[str, Any], test: Dict[str, Any], settings: ComparisonSettings) -> bool:
+    """
+    Рекурсивно сравнивает два словаря с учетом настроек.
+    """
+    if len(control) > len(test):
+        return False # Если в тестовом словаре не хватает ключей
+
+    for key, control_value in control.items():
+        if key not in test:
+            return False
+        test_value = test[key]
+        if not compare_values(control_value, test_value, settings, context='dict'):
+            return False
+    return True
+
+def compare_lists(control: List[Any], test: List[Any], settings: ComparisonSettings) -> bool:
+    """
+    Сравнивает два списка с учетом настроек.
+    Для неупорядоченного сравнения (bag comparison).
+    """
+    if len(control) != len(test):
+        return False
+
+    test_copy = list(test)
+    for control_item in control:
+        found_match = False
+        for i, test_item in enumerate(test_copy):
+            if compare_values(control_item, test_item, settings, context='list'):
+                found_match = True
+                del test_copy[i]
+                break
+        if not found_match:
+            return False
+    return True
+
+def compare(control: Any, test: Any, settings: ComparisonSettings) -> bool:
+    """
+    Главная точка входа для сравнения двух ответов (эталонного и от модели).
+    """
+    return compare_values(control, test, settings, context='text')
