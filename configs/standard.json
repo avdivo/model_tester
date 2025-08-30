@@ -1,0 +1,14 @@
+{
+  "param": {
+    "temperature": 0.2,
+    "max_tokens": null,
+    "top_p": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "seed": null,
+    "stop": null,
+    "stream": false
+  },
+  "response_format": null,
+  "extra_body": null
+}
