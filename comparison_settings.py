@@ -10,12 +10,15 @@ StrComparisonMethod = Literal["similarity", "model"]
 class ComparisonSettings:
     """
     Датакласс для хранения настроек сравнения для одного тестового прогона.
+    Каждый метод может быть model или similarity. Для model числовое значение не нужно.
+    Тут приведены настройки по умолчанию.
     """
     # Допуск для сравнения чисел
     num_tolerance: float = 0.01
 
     # Метод сравнения для строк, являющихся ответом модели (не JSON)
     text_comparison_method: StrComparisonMethod = "model"
+    text_similarity_threshold: int = 0
 
     # Метод сравнения для строковых значений в словарях
     dict_str_comparison_method: StrComparisonMethod = "similarity"

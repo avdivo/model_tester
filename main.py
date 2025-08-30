@@ -2,6 +2,7 @@ import json
 from func import get_section
 from tester_engine import run_test_iteration
 
+
 def main():
     """
     Главный управляющий скрипт.

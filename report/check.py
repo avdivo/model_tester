@@ -78,7 +78,7 @@ def _compare_recursive(
             threshold = settings.list_str_similarity_threshold
         else: # context == 'text'
             method = settings.text_comparison_method
-            threshold = 75 # Порог по умолчанию для одиночного текста
+            threshold = settings.text_similarity_threshold
 
         # Применяем выбранный метод
         if method == 'model':
