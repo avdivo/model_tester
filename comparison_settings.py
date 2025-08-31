@@ -19,6 +19,7 @@ class ComparisonSettings:
     # Метод сравнения для строк, являющихся ответом модели (не JSON)
     text_comparison_method: StrComparisonMethod = "model"
     text_similarity_threshold: int = 0
+    question: str = ""  # Вопрос заданный модели
 
     # Метод сравнения для строковых значений в словарях
     dict_str_comparison_method: StrComparisonMethod = "similarity"

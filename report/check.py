@@ -3,10 +3,12 @@
 Модуль для сравнения эталонных и тестовых ответов с гибкими настройками.
 """
 
-import requests
-from typing import Dict, Any, List, Union
+import asyncio
+from typing import Dict, Any, List
 from fuzzywuzzy import fuzz
+
 from comparison_settings import ComparisonSettings
+from providers.open_router import openrouter_async
 
 
 # --- Вспомогательные функции --- #
@@ -22,22 +24,36 @@ def _compare_strings_by_similarity(control_str: str, test_str: str, threshold: i
     """
     return fuzz.ratio(control_str.lower(), test_str.lower()) >= threshold
 
-def _compare_by_model(question: str, control_answer: str, model_answer: str, settings: ComparisonSettings) -> bool:
+def _compare_by_model(control_answer: str, model_answer: str, question: str) -> bool:
     """
-    Сравнивает два текстовых ответа с помощью LLM. 
+    Сравнивает два текстовых ответа с помощью LLM,
+    использует вопрос для оценки.
     Возвращает True, если модель считает ответы эквивалентными.
-    
-    ВНИМАНИЕ: Эта функция является заглушкой. 
-    Для ее работы требуется реализовать логику вызова LLM.
     """
-    # TODO: Реализовать логику вызова внешней LLM для семантического сравнения.
-    # В качестве временной заглушки используется простое сравнение на похожесть.
-    print("\nПРЕДУПРЕЖДЕНИЕ: Сравнение через модель не реализовано, используется стандартное сравнение по совпадению.\n")
-    return _compare_strings_by_similarity(control_answer, model_answer, 75)
+    param = {"temperature": 0.2}
+    prompt = f"""
+    Ты должен проверить смысловую схожесть 
+    проверяемого ответа "{model_answer}"
+    с контрольным "{control_answer}".
+    Для проверки может понадобиться вопрос на который дан ответ
+    "{question}".
+    Ответь цифрой: 1 - если правильно или 0 - если не правильно.
+    Не комментируй, без знаков препинания.
+    """
+    result = asyncio.run(openrouter_async(
+        model="mistralai/codestral-2508",
+        role="Ты проверяешь правильность ответа",
+        prompt=prompt,
+        param=param,
+    ))
+    try:
+        answer = result.get("answer", "")
+        return answer == "1"
+    except:
+        return False
 
 
 # --- Основные функции рекурсивного сравнения --- #
-
 def _compare_recursive(
     control: Any, 
     test: Any, 
@@ -82,7 +98,7 @@ def _compare_recursive(
 
         # Применяем выбранный метод
         if method == 'model':
-            return _compare_by_model("", control, test, settings)
+            return _compare_by_model(control, test, settings.question)
         else: # similarity
             return _compare_strings_by_similarity(control, test, threshold)
 

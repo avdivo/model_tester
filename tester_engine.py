@@ -132,6 +132,7 @@ def run_test_iteration(model: str, test_name: str, config: dict) -> float:
             break
 
         question = question.strip()
+        comparison_settings.question = question  # Запоминаем вопрос
 
         try:
             answer = answer.strip()
