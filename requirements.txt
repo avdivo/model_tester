@@ -1,0 +1,7 @@
+aiohttp
+requests
+python-dotenv
+openpyxl
+tabulate
+fuzzywuzzy
+python-Levenshtein
