@@ -2,7 +2,7 @@
 ## Описание
 Тестирование проверки модели моделью
 ## Разрешить выполнение
-да
+нет
 ## Повторы
 2
 ## Конфигурация
@@ -23,21 +23,21 @@ test_model_check
 standard
 ## Модели
 mistralai/codestral-2508, meta-llama/llama-3.2-3b-instruct, meta-llama/llama-3.2-1b-instruct,
-liquid/lfm-7b, mistralai/mistral-nemo, meta-llama/llama-3.1-8b-instruct, liquid/lfm-3b,
-
+liquid/lfm-7b, mistralai/mistral-nemo, meta-llama/llama-3.1-8b-instruct, liquid/lfm-3b
 ## Тесты
 get_metadata
 
 # Набор тестов 3
 ## Описание
-Тестирование получения метаданных из запроса
+Откуда куда ехать
 ## Разрешить выполнение
-нет
+да
 ## Повторы
-2
+1
 ## Конфигурация
 standard
 ## Модели
-mistralai/codestral-2508
+mistralai/ministral-3b, mistralai/codestral-2508, google/gemini-2.5-flash-lite-preview-06-17, 
+meta-llama/llama-3.2-3b-instruct
 ## Тесты
-get_metadata
+for_nearest_bus

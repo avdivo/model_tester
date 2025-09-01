@@ -53,26 +53,26 @@ def run_test_iteration(model: str, test_name: str, config: dict) -> float:
     settings = get_section(test_content, "Настройки")
     try:
         if settings:
-            for_numbers = float(get_section(settings, "Допуск при сравнении чисел"))
+            for_numbers = float(get_section(settings, "Допуск при сравнении чисел", 2).strip())
             if for_numbers:
                 comparison_settings.num_tolerance = float(for_numbers)
     except:
         pass
 
     try:
-        for_strings_list = get_section(settings, "Сравнение строк в списке")
-        if for_strings_list:
-            if for_strings_list.lower() == "модель":
+        for_strings_text = get_section(settings, "Сравнение ответа модели текстом", 2).strip()
+        if for_strings_text:
+            if for_strings_text.lower() == "модель":
                 comparison_settings.text_comparison_method = "model"
             else:
-                _, threshold = for_strings_list.split()
+                _, threshold = for_strings_text.split()
                 comparison_settings.text_comparison_method = "similarity"  # Метод сравнения
                 comparison_settings.text_similarity_threshold = int(threshold)  # Процент похожести
     except:
         pass
 
     try:
-        for_strings_dict = get_section(settings, "Сравнение строк в словаре")
+        for_strings_dict = get_section(settings, "Сравнение строк в словаре", 2).strip()
         if for_strings_dict:
             if for_strings_dict.lower() == "модель":
                 comparison_settings.dict_str_comparison_method = "model"
@@ -84,12 +84,12 @@ def run_test_iteration(model: str, test_name: str, config: dict) -> float:
         pass
 
     try:
-        for_string_answer = get_section(settings, "Сравнение ответа модели текстом")
-        if for_string_answer:
-            if for_string_answer.lower() == "модель":
+        for_string_list = get_section(settings, "Сравнение строк в списке", 2).strip()
+        if for_string_list:
+            if for_string_list.lower() == "модель":
                 comparison_settings.list_str_comparison_method = "model"
             else:
-                _, threshold = for_string_answer.split()
+                _, threshold = for_string_list.split()
                 comparison_settings.list_str_comparison_method = "similarity"
                 comparison_settings.list_str_similarity_threshold = int(threshold)
     except:
@@ -174,7 +174,7 @@ def run_test_iteration(model: str, test_name: str, config: dict) -> float:
         if dict_answer is not None:
             try:
                 dict_result = json.loads(result.get("answer", "{{}}"))
-                check = compare(dict_answer, dict_result, comparison_settings)
+                check = compare(dict_answer, dict_result, comparison_settings)  # Проверка ответа
                 text += "Ответ модели:\n" + json.dumps(dict_result, ensure_ascii=False, indent=4)
             except:
                 check = False
